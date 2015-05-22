@@ -18,8 +18,8 @@ const (
 )
 
 var (
-	pathPatInfo     = regexp.MustCompile("/services/(.*)/info")
-	pathPatInstance = regexp.MustCompile("/services/(.*)/instances((?:/(.*))?)")
+	pathPatInfo     = regexp.MustCompile("/services/([^/]+)/info")
+	pathPatInstance = regexp.MustCompile("/services/([^/]+)(?:/instances(?:/([^/]+))?)?")
 )
 
 // TargetGroup is the target group read by Prometheus.
@@ -109,7 +109,7 @@ func (srvs *services) delete(node *etcd.Node) {
 
 	} else if pathPatInstance.MatchString(node.Key) {
 		// Delete one or all instances for a service
-		match := pathPatInfo.FindStringSubmatch(node.Key)
+		match := pathPatInstance.FindStringSubmatch(node.Key)
 		name := match[1]
 
 		srv, ok := srvs.m[name]
@@ -119,9 +119,10 @@ func (srvs *services) delete(node *etcd.Node) {
 		}
 		// The whole instaces space was deleted.
 		if match[2] == "" {
-			for name := range srv.instances {
-				delete(srv.instances, name)
+			for in := range srv.instances {
+				delete(srv.instances, in)
 			}
+			srvs.del = append(srvs.del, name)
 		} else {
 			delete(srv.instances, match[2])
 		}
@@ -203,7 +204,9 @@ func (srvs *services) persist() {
 	}
 	// Remove files for disappeared services.
 	for _, name := range srvs.del {
-		os.Remove("tgroups/" + name + ".json")
+		if err := os.Remove("tgroups/" + name + ".json"); err != nil {
+			log.Errorln(err)
+		}
 	}
 	srvs.del = nil
 }
