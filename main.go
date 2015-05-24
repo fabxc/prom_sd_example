@@ -65,7 +65,7 @@ func main() {
 	// Perform an initial read of all services.
 	res, err := client.Get(servicesPrefix, false, true)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error on initial retrieval: %s", err)
 	}
 	srvs.update(res.Node)
 	srvs.persist()
@@ -159,7 +159,7 @@ func (srvs *services) update(node *etcd.Node) {
 		match := pathPatInstance.FindStringSubmatch(node.Key)
 		name := match[1]
 
-		srv, ok := srvs.m[match[1]]
+		srv, ok := srvs.m[name]
 		if !ok {
 			log.Errorf("instance update for unknown service %q", name)
 			return
@@ -192,7 +192,7 @@ func (srvs *services) persist() {
 			continue
 		}
 
-		f, err := os.Create("tgroups/" + name + ".json")
+		f, err := create("tgroups/" + name + ".json")
 		if err != nil {
 			log.Errorln(err)
 			continue
