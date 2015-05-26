@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"os"
 )
 
@@ -21,7 +20,7 @@ func (f *renameFile) Close() error {
 }
 
 func create(filename string) (io.WriteCloser, error) {
-	tmpFilename := fmt.Sprintf("%s.%d", filename, rand.Int63n(math.MaxInt64))
+	tmpFilename := filename + ".tmp"
 
 	f, err := os.Create(tmpFilename)
 	if err != nil {
