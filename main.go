@@ -55,7 +55,10 @@ func (srv *service) targetGroups() (tgs []*TargetGroup) {
 	}
 	for grp, instances := range groups {
 		tg := &TargetGroup{
-			Labels: map[string]string{"group": grp},
+			Labels: map[string]string{
+				"group": grp,
+				"owner": srv.info.Owner,
+			},
 		}
 		for _, inst := range instances {
 			tg.Targets = append(tg.Targets, fmt.Sprintf("%s:%d", inst.Host, inst.Port))
@@ -198,7 +201,7 @@ func (srvs *services) update(node *etcd.Node) {
 	}
 }
 
-/// persist writes the current services to disc.
+// persist writes the current services to disc.
 func (srvs *services) persist() {
 	for name, srv := range srvs.m {
 		if !srv.info.Monitored {

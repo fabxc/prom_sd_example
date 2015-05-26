@@ -8,20 +8,16 @@ import (
 	"os"
 )
 
-type renamedFile struct {
-	file     *os.File
+type renameFile struct {
+	*os.File
 	filename string
 }
 
-func (f *renamedFile) Write(b []byte) (int, error) {
-	return f.file.Write(b)
-}
-
-func (f *renamedFile) Close() error {
-	if err := f.file.Close(); err != nil {
+func (f *renameFile) Close() error {
+	if err := f.File.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.file.Name(), f.filename)
+	return os.Rename(f.File.Name(), f.filename)
 }
 
 func create(filename string) (io.WriteCloser, error) {
@@ -32,8 +28,8 @@ func create(filename string) (io.WriteCloser, error) {
 		return nil, err
 	}
 
-	rf := &renamedFile{
-		file:     f,
+	rf := &renameFile{
+		File:     f,
 		filename: filename,
 	}
 	return rf, nil
