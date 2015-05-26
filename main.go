@@ -172,6 +172,9 @@ func (srvs *services) update(node *etcd.Node) {
 			srv = &service{instances: map[string]*Instance{}}
 			srvs.m[name] = srv
 		}
+		if !info.Monitored {
+			srvs.del = append(srvs.del, name)
+		}
 		srv.info = info
 
 	} else if pathPatInstance.MatchString(node.Key) {
