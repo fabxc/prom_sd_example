@@ -30,8 +30,9 @@ type TargetGroup struct {
 
 // Instance is the instance object stored in etcd.
 type Instance struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host  string `json:"host"`
+	Port  int    `json:"port"`
+	Group string `json:"group"`
 }
 
 // ServiceInfo is the information object stored in etcd.
@@ -44,6 +45,24 @@ type ServiceInfo struct {
 type service struct {
 	info      *ServiceInfo
 	instances map[string]*Instance
+}
+
+// targetGroups returns the TargetGroup representations of its instances.
+func (srv *service) targetGroups() (tgs []*TargetGroup) {
+	groups := make(map[string][]*Instance)
+	for _, inst := range srv.instances {
+		groups[inst.Group] = append(groups[inst.Group], inst)
+	}
+	for grp, instances := range groups {
+		tg := &TargetGroup{
+			Labels: map[string]string{"group": grp},
+		}
+		for _, inst := range instances {
+			tg.Targets = append(tg.Targets, fmt.Sprintf("%s:%d", inst.Host, inst.Port))
+		}
+		tgs = append(tgs, tg)
+	}
+	return tgs
 }
 
 // services are the services stored in etcd.
@@ -182,11 +201,7 @@ func (srvs *services) persist() {
 		if !srv.info.Monitored {
 			continue
 		}
-		tg := &TargetGroup{}
-		for _, inst := range srv.instances {
-			tg.Targets = append(tg.Targets, fmt.Sprintf("%s:%d", inst.Host, inst.Port))
-		}
-		content, err := json.Marshal([]*TargetGroup{tg})
+		content, err := json.Marshal(srv.targetGroups())
 		if err != nil {
 			log.Errorln(err)
 			continue
