@@ -13,6 +13,8 @@ type renameFile struct {
 }
 
 func (f *renameFile) Close() error {
+	f.File.Sync()
+
 	if err := f.File.Close(); err != nil {
 		return err
 	}
