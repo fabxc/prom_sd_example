@@ -9,7 +9,7 @@ from MySQLdb import connect
  
  
 def refresh(cur):
-    res = cur.execute("SELECT address, job, zone FROM instances")
+    cur.execute("SELECT address, job, zone FROM instances")
  
     tgs = []
     for key, vals in groupby(cur.fetchall(), key=lambda r: (r[1], r[2])):
