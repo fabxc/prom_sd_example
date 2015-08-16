@@ -19,13 +19,10 @@ type TargetGroup struct {
 	Labels  map[string]string `json:"labels,omitempty"`
 }
 
-type Instances map[string]string
-
-// services are the services stored in etcd.
-type services struct {
-	m   map[string]Instances // The current services.
-	del []string             // Services deleted in the last update.
-}
+type (
+	instances map[string]string
+	services  map[string]instances
+)
 
 var (
 	etcdServer = flag.String("server", "http://127.0.0.1:4001", "etcd server to connect to")
@@ -35,12 +32,11 @@ var (
 func main() {
 	flag.Parse()
 
-	client := etcd.NewClient([]string{*etcdServer})
-
-	srvs := &services{
-		m: map[string]Instances{},
-	}
-	updates := make(chan *etcd.Response)
+	var (
+		client  = etcd.NewClient([]string{*etcdServer})
+		srvs    = services{}
+		updates = make(chan *etcd.Response)
+	)
 
 	// Perform an initial read of all services.
 	res, err := client.Get(servicesPrefix, false, true)
@@ -73,7 +69,7 @@ func main() {
 
 // handle recursively applies the handler h to the nodes in the subtree
 // represented by node.
-func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
+func (srvs services) handle(node *etcd.Node, h func(*etcd.Node)) {
 	if pathPat.MatchString(node.Key) {
 		h(node)
 	} else {
@@ -88,7 +84,7 @@ func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
 }
 
 // update the services based on the given node.
-func (srvs *services) update(node *etcd.Node) {
+func (srvs services) update(node *etcd.Node) {
 	match := pathPat.FindStringSubmatch(node.Key)
 	// Creating a new job dir does not require any action.
 	if match[2] == "" {
@@ -96,34 +92,34 @@ func (srvs *services) update(node *etcd.Node) {
 	}
 	srv := match[1]
 
-	instances, ok := srvs.m[srv]
+	insts, ok := srvs[srv]
 	if !ok {
-		instances = Instances{}
+		insts = instances{}
 	}
-	instances[match[2]] = node.Value
-	srvs.m[srv] = instances
+	insts[match[2]] = node.Value
+	srvs[srv] = insts
 }
 
 // delete services or instances based on the given node.
-func (srvs *services) delete(node *etcd.Node) {
+func (srvs services) delete(node *etcd.Node) {
 	match := pathPat.FindStringSubmatch(node.Key)
 	srv := match[1]
 
 	// Deletion of an entire service.
 	if match[2] == "" {
-		delete(srvs.m, srv)
+		delete(srvs, srv)
 		return
 	}
 
 	// Delete the instance from the service.
-	delete(srvs.m[srv], match[2])
+	delete(srvs[srv], match[2])
 }
 
 // persist writes the current services to disc.
-func (srvs *services) persist() {
+func (srvs services) persist() {
 	var tgroups []*TargetGroup
 	// Write files for current services.
-	for job, instances := range srvs.m {
+	for job, instances := range srvs {
 		var targets []string
 		for _, addr := range instances {
 			targets = append(targets, addr)
