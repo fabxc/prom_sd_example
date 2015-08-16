@@ -65,9 +65,9 @@ func main() {
 		h := srvs.update
 		if res.Action == "delete" {
 			h = srvs.delete
-			log.Println("delete", res.Node)
+			log.Infoln("delete", res.Node.Key, res.Node.Value)
 		} else {
-			log.Println("update", res.Node)
+			log.Infoln("update", res.Node.Key, res.Node.Value)
 		}
 		srvs.handle(res.Node, h)
 		srvs.persist()
@@ -89,7 +89,6 @@ func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
 
 // delete services or instances based on the given node.
 func (srvs *services) delete(node *etcd.Node) {
-	log.Println("delete", node)
 	match := pathPat.FindStringSubmatch(node.Key)
 	srv := match[1]
 	// Deletion of an entire service.
@@ -109,7 +108,6 @@ func (srvs *services) delete(node *etcd.Node) {
 
 // update the services based on the given node.
 func (srvs *services) update(node *etcd.Node) {
-	log.Println("update", node)
 	match := pathPat.FindStringSubmatch(node.Key)
 	// Creating a new job dir does not require an action.
 	if match[2] == "" {
