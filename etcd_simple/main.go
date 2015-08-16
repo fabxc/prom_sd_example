@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/prometheus/log"
@@ -76,22 +77,23 @@ func main() {
 // handle recursively applies the handler h to the nodes in the subtree
 // represented by node.
 func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
+	if pathPat.MatchString(node.Key) {
+		h(node)
+	} else {
+		log.Warnf("unhandled key %q", node.Key)
+	}
+
 	if node.Dir {
 		for _, n := range node.Nodes {
 			srvs.handle(n, h)
 		}
 	}
-	if !pathPat.MatchString(node.Key) {
-		log.Warnf("unhandled key %q", node.Key)
-		return
-	}
-	h(node)
 }
 
 // update the services based on the given node.
 func (srvs *services) update(node *etcd.Node) {
 	match := pathPat.FindStringSubmatch(node.Key)
-	// Creating a new job dir does not require an action.
+	// Creating a new job dir does not require any action.
 	if match[2] == "" {
 		return
 	}
@@ -109,19 +111,15 @@ func (srvs *services) update(node *etcd.Node) {
 func (srvs *services) delete(node *etcd.Node) {
 	match := pathPat.FindStringSubmatch(node.Key)
 	srv := match[1]
+
 	// Deletion of an entire service.
 	if match[2] == "" {
-		srvs.del = append(srvs.del, srv)
 		delete(srvs.m, srv)
 		return
 	}
 
-	instances, ok := srvs.m[srv]
-	if !ok {
-		log.Errorf("Received delete for unknown service %s", srv)
-		return
-	}
-	delete(instances, match[2])
+	// Delete the instance from the service.
+	delete(srvs.m[srv], match[2])
 }
 
 // persist writes the current services to disc.
@@ -153,11 +151,18 @@ func (srvs *services) persist() {
 		}
 		f.Close()
 	}
-	// Remove files for disappeared services.
-	for _, job := range srvs.del {
-		if err := os.Remove(filepath.Join(*targetDir, job+".json")); err != nil {
-			log.Errorln(err)
+
+	// Remove files for services that no longer exist.
+	filepath.Walk(*targetDir, func(path string, info os.FileInfo, err error) error {
+		if !info.IsDir() && filepath.Ext(path) == ".json" {
+			job := strings.SplitN(filepath.Base(path), ".", 2)[0]
+			// Remove file if associated job does no longer exist.
+			if _, ok := srvs.m[job]; !ok {
+				if err := os.Remove(path); err != nil {
+					log.Errorln(err)
+				}
+			}
 		}
-	}
-	srvs.del = nil
+		return nil
+	})
 }
