@@ -3,10 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"os"
-	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/coreos/go-etcd/etcd"
 	"github.com/prometheus/log"
@@ -32,7 +29,7 @@ type services struct {
 
 var (
 	etcdServer = flag.String("server", "http://127.0.0.1:4001", "etcd server to connect to")
-	targetDir  = flag.String("target-dir", "tgroups", "directory to store the target group files")
+	targetFile = flag.String("target-file", "tgroups.json", "the file that contains the target groups")
 )
 
 func main() {
@@ -124,45 +121,34 @@ func (srvs *services) delete(node *etcd.Node) {
 
 // persist writes the current services to disc.
 func (srvs *services) persist() {
+	var tgroups []*TargetGroup
 	// Write files for current services.
 	for job, instances := range srvs.m {
 		var targets []string
 		for _, addr := range instances {
 			targets = append(targets, addr)
 		}
-		content, err := json.Marshal([]*TargetGroup{
-			{
-				Targets: targets,
-				Labels:  map[string]string{"job": job},
-			},
-		})
-		if err != nil {
-			log.Errorln(err)
-			continue
-		}
 
-		f, err := create(filepath.Join(*targetDir, job+".json"))
-		if err != nil {
-			log.Errorln(err)
-			continue
-		}
-		if _, err := f.Write(content); err != nil {
-			log.Errorln(err)
-		}
-		f.Close()
+		tgroups = append(tgroups, &TargetGroup{
+			Targets: targets,
+			Labels:  map[string]string{"job": job},
+		})
 	}
 
-	// Remove files for services that no longer exist.
-	filepath.Walk(*targetDir, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && filepath.Ext(path) == ".json" {
-			job := strings.SplitN(filepath.Base(path), ".", 2)[0]
-			// Remove file if associated job does no longer exist.
-			if _, ok := srvs.m[job]; !ok {
-				if err := os.Remove(path); err != nil {
-					log.Errorln(err)
-				}
-			}
-		}
-		return nil
-	})
+	content, err := json.Marshal(tgroups)
+	if err != nil {
+		log.Errorln(err)
+		return
+	}
+
+	f, err := create(*targetFile)
+	if err != nil {
+		log.Errorln(err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Write(content); err != nil {
+		log.Errorln(err)
+	}
 }
