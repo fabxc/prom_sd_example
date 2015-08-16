@@ -62,18 +62,19 @@ func main() {
 
 	// Apply updates sent on the channel.
 	for res := range updates {
+		log.Infoln(res.Action, res.Node.Key, res.Node.Value)
+
 		h := srvs.update
 		if res.Action == "delete" {
 			h = srvs.delete
-			log.Infoln("delete", res.Node.Key, res.Node.Value)
-		} else {
-			log.Infoln("update", res.Node.Key, res.Node.Value)
 		}
 		srvs.handle(res.Node, h)
 		srvs.persist()
 	}
 }
 
+// handle recursively applies the handler h to the nodes in the subtree
+// represented by node.
 func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
 	if node.Dir {
 		for _, n := range node.Nodes {
@@ -85,6 +86,23 @@ func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
 		return
 	}
 	h(node)
+}
+
+// update the services based on the given node.
+func (srvs *services) update(node *etcd.Node) {
+	match := pathPat.FindStringSubmatch(node.Key)
+	// Creating a new job dir does not require an action.
+	if match[2] == "" {
+		return
+	}
+	srv := match[1]
+
+	instances, ok := srvs.m[srv]
+	if !ok {
+		instances = Instances{}
+	}
+	instances[match[2]] = node.Value
+	srvs.m[srv] = instances
 }
 
 // delete services or instances based on the given node.
@@ -104,23 +122,6 @@ func (srvs *services) delete(node *etcd.Node) {
 		return
 	}
 	delete(instances, match[2])
-}
-
-// update the services based on the given node.
-func (srvs *services) update(node *etcd.Node) {
-	match := pathPat.FindStringSubmatch(node.Key)
-	// Creating a new job dir does not require an action.
-	if match[2] == "" {
-		return
-	}
-	srv := match[1]
-
-	instances, ok := srvs.m[srv]
-	if !ok {
-		instances = Instances{}
-	}
-	instances[match[2]] = node.Value
-	srvs.m[srv] = instances
 }
 
 // persist writes the current services to disc.
