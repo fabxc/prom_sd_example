@@ -49,44 +49,47 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error on initial retrieval: %s", err)
 	}
-	srvs.update(res.Node)
+	srvs.handle(res.Node, srvs.update)
 	srvs.persist()
 
 	// Start watching for updates.
 	go func() {
-		res, err := client.Watch(servicesPrefix, 0, true, updates, nil)
+		_, err := client.Watch(servicesPrefix, 0, true, updates, nil)
 		if err != nil {
 			log.Errorln(err)
 		}
-		log.Infoln(res)
 	}()
 
 	// Apply updates sent on the channel.
 	for res := range updates {
-		if !pathPat.MatchString(res.Node.Key) {
-			log.Warnf("unhandled key %q", res.Node.Key)
-			continue
-		}
+		h := srvs.update
 		if res.Action == "delete" {
-			log.Debugf("delete: %s", res.Node.Key)
-			srvs.delete(res.Node)
+			h = srvs.delete
+			log.Println("delete", res.Node)
 		} else {
-			log.Debugf("%s: %s = %s", res.Action, res.Node.Key, res.Node.Value)
-			srvs.update(res.Node)
+			log.Println("update", res.Node)
 		}
+		srvs.handle(res.Node, h)
 		srvs.persist()
 	}
 }
 
-// delete services or instances based on the given node.
-func (srvs *services) delete(node *etcd.Node) {
+func (srvs *services) handle(node *etcd.Node, h func(*etcd.Node)) {
 	if node.Dir {
 		for _, n := range node.Nodes {
-			srvs.delete(n)
+			srvs.handle(n, h)
 		}
+	}
+	if !pathPat.MatchString(node.Key) {
+		log.Warnf("unhandled key %q", node.Key)
 		return
 	}
+	h(node)
+}
 
+// delete services or instances based on the given node.
+func (srvs *services) delete(node *etcd.Node) {
+	log.Println("delete", node)
 	match := pathPat.FindStringSubmatch(node.Key)
 	srv := match[1]
 	// Deletion of an entire service.
@@ -106,19 +109,13 @@ func (srvs *services) delete(node *etcd.Node) {
 
 // update the services based on the given node.
 func (srvs *services) update(node *etcd.Node) {
-	if node.Dir {
-		for _, n := range node.Nodes {
-			srvs.update(n)
-		}
-		return
-	}
-
+	log.Println("update", node)
 	match := pathPat.FindStringSubmatch(node.Key)
-	srv := match[1]
 	// Creating a new job dir does not require an action.
 	if match[2] == "" {
 		return
 	}
+	srv := match[1]
 
 	instances, ok := srvs.m[srv]
 	if !ok {
@@ -130,6 +127,7 @@ func (srvs *services) update(node *etcd.Node) {
 
 // persist writes the current services to disc.
 func (srvs *services) persist() {
+	// Write files for current services.
 	for job, instances := range srvs.m {
 		var targets []string
 		for _, addr := range instances {
